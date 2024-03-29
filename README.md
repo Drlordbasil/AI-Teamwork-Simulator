@@ -3,6 +3,8 @@
 **AI-TeamPlay: AI-Powered Teamwork Dynamics**
 
 Welcome to AI-TeamPlay, where artificial intelligence takes on the dynamics of teamwork in a simulated tech environment. Here's a glimpse into the text-based workflow that brings this digital workspace to life:
+![image](https://github.com/Drlordbasil/AI-Teamwork-Simulator/assets/126736516/da8c5ed6-7a05-47e3-9a21-2c9e56f71b3c)
+
 ![image](https://github.com/Drlordbasil/AI-Teamwork-Simulator/assets/126736516/a377778a-44e0-447d-853c-21f06f2bc2af)
 
 
