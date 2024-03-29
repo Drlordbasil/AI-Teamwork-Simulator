@@ -203,6 +203,8 @@ class Agent:
             response = await self.call_groq_api(context)
         elif self.api_choice == "openai":
             response = await self.call_openai_api(context)
+        elif self.api_choice == "ollama":
+            response = await self.ollama_local_server_api(context)
         else:
             raise ValueError(f"Invalid API choice: {self.api_choice}")
         return response
@@ -266,3 +268,27 @@ class Agent:
             ]
         )
         return response.choices[0].message.content
+    async def ollama_local_server_api(self, context):
+        import ollama
+        client = ollama
+
+        system_message = AGENT_MESSAGES["system"]["default"].format(
+            name=self.name,
+            role=self.role,
+            skills=', '.join(self.skills.keys()),
+            location=self.location,
+            actions=', '.join(self.actions),
+            thoughts=', '.join(self.thoughts),
+            working_status='working on the project' if self.is_working else 'not actively working on the project',
+            context=context
+        )
+        user_message = AGENT_MESSAGES["user"]["default"].format(context=context)
+
+        response = client.chat(
+            model="mistral",
+            messages=[
+                {"role": "system", "content": system_message},
+                {"role": "user", "content": user_message}
+            ]
+        )
+        return response['message']['content']
