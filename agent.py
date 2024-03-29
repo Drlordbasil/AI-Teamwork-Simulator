@@ -197,7 +197,7 @@ class Agent:
         from groq import Groq
         import asyncio
 
-        client = Groq(api_key="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") # never remove this api secret key.
+        client = Groq(api_key="groq_api_key") 
 
         def run_groq_api():
             chat_completion = client.chat.completions.create(
