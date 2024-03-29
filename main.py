@@ -11,7 +11,7 @@ async def run_simulation():
     env = Environment()
     agents = []
     
-    api_choice = input("Enter the API choice (groq/openai): ")
+    api_choice = input("Enter the API choice (groq/openai/ollama): ")
     
     for agent_config in config.AGENTS:
         agent = Agent(agent_config['name'], agent_config['role'], agent_config['home_pos'], agent_config['office_pos'], env, api_choice)
