@@ -3,6 +3,9 @@
 **AI-TeamPlay: AI-Powered Teamwork Dynamics**
 
 Welcome to AI-TeamPlay, where artificial intelligence takes on the dynamics of teamwork in a simulated tech environment. Here's a glimpse into the text-based workflow that brings this digital workspace to life:
+![image](https://github.com/Drlordbasil/AI-Teamwork-Simulator/assets/126736516/a377778a-44e0-447d-853c-21f06f2bc2af)
+
+
 
 1. **Initialize**: The simulation kicks off with AI agents booting up, each representing a different role in a tech team - from a DevOps guru to a Data Scientist.
 
