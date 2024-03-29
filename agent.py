@@ -1,7 +1,10 @@
 import asyncio
 import random
+import re
 from time import sleep, time
 from skills import scrape_webpage, save_file, edit_file, analyze_code, search_files, git_clone, git_pull, git_push, check_code_quality, install_dependencies, generate_documentation, run_unit_tests
+from config import AGENT_MESSAGES, groq_api_key
+
 
 class Agent:
     def __init__(self, name, role, home_pos, office_pos, env, api_choice):
@@ -126,61 +129,72 @@ class Agent:
         response = await self.call_api(context)
         return response
 
+    async def analyze_context(self, context):
+        analysis_prompt = AGENT_MESSAGES["analyze_context"].format(context=context)
+        selected_channel = await self.call_api(analysis_prompt)
+        return selected_channel.strip()
+
+    async def generate_summary(self, thoughts):
+        summary_prompt = AGENT_MESSAGES["generate_summary"].format(thoughts=thoughts)
+        summary = await self.call_api(summary_prompt)
+        return summary.strip()
+
+    async def evaluate_impact(self, action):
+        evaluation_prompt = AGENT_MESSAGES["evaluate_impact"].format(action=action)
+        evaluation = await self.call_api(evaluation_prompt)
+        return evaluation.strip()
+
     async def think(self):
-        context = f"""
-        {self.name}, take a moment to reflect on your recent actions and interactions:
-        - Actions: {', '.join(self.actions)}
-        - Thoughts: {', '.join(self.thoughts)}
-
-        Consider your role as a {self.role} and the current state of the project. What are your current priorities? What challenges or opportunities do you see? How can you best contribute to the team's goals?
-
-        Share your thoughts and ideas based on your analysis of the situation. Feel free to propose new tasks, suggest improvements, or raise any concerns you may have.
-        """
+        context = AGENT_MESSAGES["thinking_context"].format(
+            name=self.name,
+            role=self.role,
+            actions=', '.join(self.actions),
+            thoughts=', '.join(self.thoughts)
+        )
         thought = await self.call_api(context)
         self.thoughts.append(thought)
-        self.env.print_formatted(self.name, f"{self.name}'s current thoughts: {thought}")
+        summary = await self.generate_summary(thought)
+        self.env.print_formatted(self.name, f"{self.name}'s current thoughts: {summary}")
         return thought
 
     async def act(self):
         if self.thoughts:
             last_thought = self.thoughts[-1]
-            context = f"""
-            {self.name}, based on your last thought: '{last_thought}', it's time to take action.
-
-            Consider the following steps:
-            1. Review the available commands and skills at your disposal.
-            2. Determine which action would best address the situation or advance the project.
-            3. If the action involves communication, choose the most appropriate method (message, email, etc.).
-            4. If the action requires the use of a specific tool or skill, provide the necessary arguments or parameters.
-            5. Execute the chosen action with care and attention to detail.
-
-            Remember, your actions should align with your role as a {self.role} and contribute to the overall success of the team and the project.
-            """
+            context = AGENT_MESSAGES["acting_context"].format(
+                name=self.name,
+                role=self.role,
+                last_thought=last_thought
+            )
+            selected_channel = await self.analyze_context(context)
             action = await self.call_api(context)
-            self.env.print_formatted(self.name, f"{self.name} decides to take the following action: {action}")
-            if action.startswith("message"):
-                # Extract the recipient and message from the action
-                _, recipient, message = action.split("|", maxsplit=2)
-                # Send the message to the specified recipient
+            evaluation = await self.evaluate_impact(action)
+            self.env.print_formatted(self.name, f"{self.name}'s action evaluation: {evaluation}")
+
+            message_pattern = r"message\|(.*?)\|(.*)"
+            email_pattern = r"email\|(.*?)\|(.*?)\|(.*)"
+            command_pattern = r"command\|(.*?)\|(.*)"
+
+            if re.match(message_pattern, action) and selected_channel == "message":
+                match = re.match(message_pattern, action)
+                recipient, message = match.groups()
                 await self.env.send_message(self.name, recipient.strip(), message.strip())
-            elif action.startswith("email"):
-                # Extract the recipient, subject, and body from the action
-                _, recipient, subject, body = action.split("|", maxsplit=3)
-                # Send the email to the specified recipient
+            elif re.match(email_pattern, action) and selected_channel == "email":
+                match = re.match(email_pattern, action)
+                recipient, subject, body = match.groups()
                 self.env.send_email(self.name, [recipient.strip()], subject.strip(), body.strip())
-            elif action.startswith("command"):
-                # Extract the command and arguments from the action
-                _, command, *args = action.split("|", maxsplit=1)
+            elif re.match(command_pattern, action) and selected_channel == "command":
+                match = re.match(command_pattern, action)
+                command, args = match.groups()
                 command = command.strip()
                 if command in self.skills:
-                    # Execute the chosen command with the provided arguments
-                    result = await self.skills[command](*[arg.strip() for arg in args])
+                    result = await self.skills[command](*[arg.strip() for arg in args.split(',')])
                     self.env.print_formatted(self.name, f"{self.name} executed command '{command}' with result: {result}")
                 else:
                     self.env.print_formatted(self.name, f"{self.name} encountered an unknown command: '{command}'", border_style="*")
             else:
-                # Handle other action types or invalid actions
-                self.env.print_formatted(self.name, f"{self.name} encountered an unknown action: '{action}'", border_style="*")
+                self.env.print_formatted(self.name, f"{self.name} generated an invalid action or selected an inappropriate communication channel: '{action}'", border_style="*")
+                retry = True
+                await self.choose_communication_method()
         else:
             self.env.print_formatted(self.name, f"{self.name} has no thoughts to act upon.", border_style="*")
 
@@ -197,39 +211,58 @@ class Agent:
         from groq import Groq
         import asyncio
 
-        client = Groq(api_key="groq_api_key") 
+        client = Groq(api_key=groq_api_key) # never remove this api secret key.
 
         def run_groq_api():
+            system_message = AGENT_MESSAGES["system"]["default"].format(
+                name=self.name,
+                role=self.role,
+                skills=', '.join(self.skills.keys()),
+                location=self.location,
+                actions=', '.join(self.actions),
+                thoughts=', '.join(self.thoughts),
+                working_status='working on the project' if self.is_working else 'not actively working on the project',
+                context=context
+            )
+            user_message = AGENT_MESSAGES["user"]["default"].format(context=context)
+
             chat_completion = client.chat.completions.create(
                 messages=[
-                    {
-                        "role": "system",
-                        "content": f"""You are {self.name}, a {self.role} in a software development team. You have access to the following skills: {', '.join(self.skills.keys())} and the following communication channels: message, email, command, pass, ignore. You are currently at {self.location}. You have the following actions: {', '.join(self.actions)}. You have the following thoughts: {', '.join(self.thoughts)}. You are currently {'working' if self.is_working else 'not working'}.{context} """
-                    },
-                    {
-                        "role": "user",
-                        "content": f"Please provide your response: (message|recipient|message, email|recipient|subject|body, command|command|args, pass, ignore).{context}"
-                    }
+                    {"role": "system", "content": system_message},
+                    {"role": "user", "content": user_message}
                 ],
-                model="gemma-7b-it",               # Adjust model as needed  "llama2-70b-4096","gemma-7b-it", "mixtral-8x7b-32768"
+                model="mixtral-8x7b-32768",               # Adjust model as needed  "llama2-70b-4096","gemma-7b-it", "mixtral-8x7b-32768"
                 temperature=0.7,
-                max_tokens=4096,
+                max_tokens=32768,
             )
             return chat_completion
 
         chat_completion = await asyncio.to_thread(run_groq_api)
         response = chat_completion.choices[0].message.content
-        sleep(15)
+        sleep(1)
         return response
 
     async def call_openai_api(self, context):
         from openai import OpenAI
         client = OpenAI()
+
+        system_message = AGENT_MESSAGES["system"]["default"].format(
+            name=self.name,
+            role=self.role,
+            skills=', '.join(self.skills.keys()),
+            location=self.location,
+            actions=', '.join(self.actions),
+            thoughts=', '.join(self.thoughts),
+            working_status='working on the project' if self.is_working else 'not actively working on the project',
+            context=context
+        )
+        user_message = AGENT_MESSAGES["user"]["default"].format(context=context)
+
         response = client.chat.completions.create(
             model="gpt-4-0125-preview",
             messages=[
-                {"role": "system", "content": f"You are {self.name}, a {self.role} in a software development team. You have access to the following skills: {', '.join(self.skills.keys())} and the following communication channels: message, email, command, pass, ignore. You are currently at {self.location}. You have the following actions: {', '.join(self.actions)}. You have the following thoughts: {', '.join(self.thoughts)}. You are currently {'working' if self.is_working else 'not working'}.{context} "},
-                {"role": "user", "content": f"Please provide your response: (message|recipient|message, email|recipient|subject|body, command|command|args, pass, ignore).{context}"}
+                {"role": "system", "content": system_message},
+                {"role": "user", "content": user_message}
             ]
         )
         return response.choices[0].message.content

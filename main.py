@@ -19,7 +19,7 @@ async def run_simulation():
         env.add_agent(agent)
 
     await asyncio.gather(*[agent.go_to_office() for agent in agents])
-    list_of_agents = [a.name for a in agents]
+    
 
     # Development Phase
     start_time = time()
