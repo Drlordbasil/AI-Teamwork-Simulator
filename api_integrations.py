@@ -7,14 +7,16 @@ from langchain.llms.base import LLM
 from groq import Groq
 from openai import OpenAI
 import ollama
+import anthropic
 from config import AGENT_MESSAGES, groq_api_key, claude_api_key
 
 class GroqLLM(LLM):
     def __init__(self, api_key):
-        self.client = Groq(api_key=api_key)
+        self.api_key = api_key
 
     def _call(self, prompt, stop=None):
-        response = self.client.chat.completions.create(
+        client = Groq(api_key=self.api_key)
+        response = client.chat.completions.create(
             messages=[
                 {"role": "system", "content": "You are a helpful assistant."},
                 {"role": "user", "content": prompt}
@@ -27,7 +29,11 @@ class GroqLLM(LLM):
 
     @property
     def _identifying_params(self):
-        return {"api_key": self.client.api_key}
+        return {"api_key": self.api_key}
+    
+    @property
+    def _llm_type(self):
+        return "groq"
 
 class APIIntegrations:
     def __init__(self, api_choice, agent_data):
@@ -43,7 +49,7 @@ class APIIntegrations:
         elif api_choice == "langchain":
             self.client = None
         elif api_choice == "claude":
-            self.client = None
+            self.client = anthropic.Anthropic(api_key=claude_api_key)
         else:
             raise ValueError(f"Invalid API choice: {api_choice}")
 
@@ -69,7 +75,7 @@ class APIIntegrations:
                 name=self.agent_data["name"],
                 role=self.agent_data["role"],
                 responsibilities=self.agent_data["responsibilities"],
-                skills=', '.join(self.agent_data["skills"].keys()),
+                skills=', '.join(self.agent_data["skills"]),
                 location=self.agent_data["location"],
                 actions=', '.join(self.agent_data["actions"]),
                 thoughts=' '.join(map(str, self.agent_data["thoughts"])),
@@ -99,7 +105,7 @@ class APIIntegrations:
             name=self.agent_data["name"],
             role=self.agent_data["role"],
             responsibilities=self.agent_data["responsibilities"],
-            skills=', '.join(self.agent_data["skills"].keys()),
+            skills=', '.join(self.agent_data["skills"]),
             location=self.agent_data["location"],
             actions=', '.join(self.agent_data["actions"]),
             thoughts=' '.join(map(str, self.agent_data["thoughts"])),
@@ -121,7 +127,7 @@ class APIIntegrations:
             name=self.agent_data["name"],
             role=self.agent_data["role"],
             responsibilities=self.agent_data["responsibilities"],
-            skills=', '.join(self.agent_data["skills"].keys()),
+            skills=', '.join(self.agent_data["skills"]),
             location=self.agent_data["location"],
             actions=', '.join(self.agent_data["actions"]),
             thoughts=' '.join(map(str, self.agent_data["thoughts"])),
@@ -140,22 +146,29 @@ class APIIntegrations:
 
     async def call_langchain_api(self, context):
         prompt_template = PromptTemplate(
-            input_variables=["question"],
-            template="Answer the following question:\n\nQuestion: {question}\nAnswer:",
+            input_variables=["context", "name", "role", "responsibilities", "skills", "location", "actions", "thoughts", "working_status"],
+            template=AGENT_MESSAGES["system"]["default"] + "\n\n" + AGENT_MESSAGES["user"]["default"],
         )
         groq_llm = GroqLLM(api_key=groq_api_key)
         chain = LLMChain(llm=groq_llm, prompt=prompt_template)
-        response = chain.run(context)
+        response = chain.run(
+            context=context,
+            name=self.agent_data["name"],
+            role=self.agent_data["role"],
+            responsibilities=self.agent_data["responsibilities"],
+            skills=', '.join(self.agent_data["skills"]),
+            location=self.agent_data["location"],
+            actions=', '.join(self.agent_data["actions"]),
+            thoughts=' '.join(map(str, self.agent_data["thoughts"])),
+            working_status='working on the project' if self.agent_data["is_working"] else 'not actively working on the project'
+        )
         return response
-
     async def call_claude_api(self, context):
-        import anthropic
-        client = anthropic.Anthropic(api_key=claude_api_key)
         system_message = AGENT_MESSAGES["system"]["default"].format(
             name=self.agent_data["name"],
             role=self.agent_data["role"],
             responsibilities=self.agent_data["responsibilities"],
-            skills=', '.join(self.agent_data["skills"].keys()),
+            skills=', '.join(self.agent_data["skills"]),
             location=self.agent_data["location"],
             actions=', '.join(self.agent_data["actions"]),
             thoughts=' '.join(map(str, self.agent_data["thoughts"])),
@@ -163,10 +176,10 @@ class APIIntegrations:
             context=context
         )
         user_message = AGENT_MESSAGES["user"]["default"].format(context=context)
-        response = client.messages.create(
+        response = self.client.messages.create(
             model="claude-3-haiku-20240307",
             max_tokens=4000,
-            temperature=0,
+            temperature=0.7,
             system=system_message,
             messages=[
                 {
