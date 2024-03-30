@@ -43,7 +43,7 @@ def load_emails(agent_emails):
         email_data = {
             "sender": sender,
             "recipient": recipient,
-            "subject": subject,
+            "subject": subject, 
             "body": body,
             "timestamp": timestamp,
             "reply_to": reply_to,
