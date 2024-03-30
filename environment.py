@@ -1,11 +1,10 @@
-import sqlite3
 import os
 import datetime
 from config import DATABASE_DIR, WORKSPACE_DIR
 import database
 from colorama import init, Fore, Style
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
+import requests
+from bs4 import BeautifulSoup
 init()
 
 AGENT_STYLES = {
@@ -25,21 +24,22 @@ class Environment:
         self.agent_emails = {}
         self.chat_history = []
         self.database = database
-        self.browser = None
+        self.workspaces = {}
 
     def load_emails(self):
         database.load_emails(self.agent_emails)
 
     def add_agent(self, agent):
         self.agents.append(agent)
-    
+        self.workspaces[agent.name] = os.path.join(WORKSPACE_DIR, agent.name)
+        os.makedirs(self.workspaces[agent.name], exist_ok=True)
+
     async def send_message(self, sender, recipient, message):
         for agent in self.agents:
-            if agent.name == recipient and agent.location == "office":
+            if agent.name == recipient:
                 self.print_formatted(recipient, f"{recipient} received a message from {sender}: '{message}'", border_style="-")
                 agent.actions.append(f"Received message from {sender}: '{message}'")
 
-        # Store the message in the chat history
         timestamp = datetime.datetime.now().isoformat()
         self.chat_history.append({
             "sender": sender,
@@ -81,7 +81,6 @@ class Environment:
             self.agent_emails[recipient_email].append(email)
             self.print_formatted(sender_name, f"Email sent from {sender_email} to {recipient_email}: {subject}")
 
-        # Save the email to the database
         database.save_email(sender_email, recipient_names, subject, body, email['timestamp'], reply_to, forward_to, attachment)
 
     def get_chat_history(self, participants=None, limit=None):
@@ -96,86 +95,140 @@ class Environment:
     def get_important_info(self):
         return database.get_important_info()
 
-    def print_formatted(self, agent_name, message, border_style="=", border_length=50):
+    def print_formatted(self, agent_name, message, border_style="▃▃▃", border_length=50):
         agent_style = AGENT_STYLES[agent_name]
         border = border_style * border_length
         print(f"\n{agent_style}{border}{Style.RESET_ALL}")
         print(f"{agent_style}{message}{Style.RESET_ALL}")
         print(f"{agent_style}{border}{Style.RESET_ALL}\n")
 
-    def save_workspace_file(self, file_name, content):
-        file_path = os.path.join(WORKSPACE_DIR, file_name)
+    def create_file(self, agent_name, file_name, content):
+        workspace_path = self.workspaces[agent_name]
+        file_path = os.path.join(workspace_path, file_name)
         with open(file_path, 'w') as file:
             file.write(content)
-        self.print_formatted('System', f"File saved to workspace: {file_name}")
+        self.print_formatted('System', f"{agent_name} created file: {file_name}")
 
-    def load_workspace_file(self, file_name):
-        file_path = os.path.join(WORKSPACE_DIR, file_name)
+    def read_file(self, agent_name, file_name):
+        workspace_path = self.workspaces[agent_name]
+        file_path = os.path.join(workspace_path, file_name)
         try:
             with open(file_path, 'r') as file:
                 content = file.read()
-            self.print_formatted('System', f"File loaded from workspace: {file_name}")
+            self.print_formatted('System', f"{agent_name} read file: {file_name}")
             return content
         except FileNotFoundError:
-            self.print_formatted('System', f"File not found in workspace: {file_name}")
+            self.print_formatted('System', f"File not found in {agent_name}'s workspace: {file_name}")
             return None
 
-    def list_workspace_files(self):
-        files = os.listdir(WORKSPACE_DIR)
-        self.print_formatted('System', f"Files in workspace: {', '.join(files)}")
+    def update_file(self, agent_name, file_name, content):
+        workspace_path = self.workspaces[agent_name]
+        file_path = os.path.join(workspace_path, file_name)
+        try:
+            with open(file_path, 'w') as file:
+                file.write(content)
+            self.print_formatted('System', f"{agent_name} updated file: {file_name}")
+        except FileNotFoundError:
+            self.print_formatted('System', f"File not found in {agent_name}'s workspace: {file_name}")
+
+    def delete_file(self, agent_name, file_name):
+        workspace_path = self.workspaces[agent_name]
+        file_path = os.path.join(workspace_path, file_name)
+        try:
+            os.remove(file_path)
+            self.print_formatted('System', f"{agent_name} deleted file: {file_name}")
+        except FileNotFoundError:
+            self.print_formatted('System', f"File not found in {agent_name}'s workspace: {file_name}")
+
+    def create_folder(self, agent_name, folder_name):
+        workspace_path = self.workspaces[agent_name]
+        folder_path = os.path.join(workspace_path, folder_name)
+        os.makedirs(folder_path, exist_ok=True)
+        self.print_formatted('System', f"{agent_name} created folder: {folder_name}")
+
+    def list_folder_contents(self, agent_name, folder_name):
+        workspace_path = self.workspaces[agent_name]
+        folder_path = os.path.join(workspace_path, folder_name)
+        try:
+            contents = os.listdir(folder_path)
+            self.print_formatted('System', f"Contents of {agent_name}'s folder '{folder_name}': {', '.join(contents)}")
+            return contents
+        except FileNotFoundError:
+            self.print_formatted('System', f"Folder not found in {agent_name}'s workspace: {folder_name}")
+            return None
+
+    def scrape_webpage(self, url):
+        try:
+            response = requests.get(url)
+            if response.status_code == 200:
+                soup = BeautifulSoup(response.text, 'html.parser')
+                scraped_data = {
+                    'title': soup.title.text if soup.title else '',
+                    'headers': [header.text for header in soup.find_all(['h1', 'h2', 'h3'])],
+                    'paragraphs': [p.text for p in soup.find_all('p')],
+                    'links': [link.get('href') for link in soup.find_all('a')]
+                }
+                self.print_formatted('System', f"Webpage scraped successfully: {url}")
+                return scraped_data
+            else:
+                self.print_formatted('System', f"Failed to scrape webpage. Status code: {response.status_code}")
+                return None
+        except requests.exceptions.RequestException as e:
+            self.print_formatted('System', f"Error occurred while scraping webpage: {str(e)}")
+            return None
+    
+    def save_workspace_file(self, agent_name, file_name, content):
+        workspace_path = self.workspaces[agent_name]
+        file_path = os.path.join(workspace_path, file_name)
+        with open(file_path, 'w') as file:
+            file.write(content)
+        self.print_formatted('System', f"{agent_name} saved file to workspace: {file_name}")
+
+    def load_workspace_file(self, agent_name, file_name):
+        workspace_path = self.workspaces[agent_name]
+        file_path = os.path.join(workspace_path, file_name)
+        try:
+            with open(file_path, 'r') as file:
+                content = file.read()
+            self.print_formatted('System', f"{agent_name} loaded file from workspace: {file_name}")
+            return content
+        except FileNotFoundError:
+            self.print_formatted('System', f"File not found in {agent_name}'s workspace: {file_name}")
+            return None
+
+    def list_workspace_files(self, agent_name):
+        workspace_path = self.workspaces[agent_name]
+        files = os.listdir(workspace_path)
+        self.print_formatted('System', f"Files in {agent_name}'s workspace: {', '.join(files)}")
         return files
 
-    def open_browser(self):
-        if not self.browser:
-            chrome_options = Options()
-            chrome_options.add_argument("--headless")  # Run Chrome in headless mode
-            self.browser = webdriver.Chrome(options=chrome_options)
-        self.print_formatted('System', "Browser opened.")
-
-    def close_browser(self):
-        if self.browser:
-            self.browser.quit()
-            self.browser = None
-        self.print_formatted('System', "Browser closed.")
-
-    def navigate_to_url(self, url):
-        if self.browser:
-            self.browser.get(url)
-            self.print_formatted('System', f"Navigated to URL: {url}")
-        else:
-            self.print_formatted('System', "No browser instance found. Please open the browser first.")
-
-    def get_browser_content(self):
-        if self.browser:
-            return self.browser.page_source
-        else:
-            self.print_formatted('System', "No browser instance found. Please open the browser first.")
-            return None
-
-    def edit_file(self, file_name):
-        file_path = os.path.join(WORKSPACE_DIR, file_name)
+    def edit_workspace_file(self, agent_name, file_name):
+        workspace_path = self.workspaces[agent_name]
+        file_path = os.path.join(workspace_path, file_name)
         if os.path.exists(file_path):
             with open(file_path, 'r') as file:
                 content = file.read()
-            self.print_formatted('System', f"File opened for editing: {file_name}")
+            self.print_formatted('System', f"{agent_name} opened file for editing: {file_name}")
             return content
         else:
-            self.print_formatted('System', f"File not found in workspace: {file_name}")
+            self.print_formatted('System', f"File not found in {agent_name}'s workspace: {file_name}")
             return None
 
-    def save_edited_file(self, file_name, content):
-        file_path = os.path.join(WORKSPACE_DIR, file_name)
+    def save_edited_workspace_file(self, agent_name, file_name, content):
+        workspace_path = self.workspaces[agent_name]
+        file_path = os.path.join(workspace_path, file_name)
         with open(file_path, 'w') as file:
             file.write(content)
-        self.print_formatted('System', f"Edited file saved: {file_name}")
+        self.print_formatted('System', f"{agent_name} saved edited file: {file_name}")
 
-    def run_python_file(self, file_name):
-        file_path = os.path.join(WORKSPACE_DIR, file_name)
+    def run_python_file(self, agent_name, file_name):
+        workspace_path = self.workspaces[agent_name]
+        file_path = os.path.join(workspace_path, file_name)
         if os.path.exists(file_path):
             try:
                 exec(open(file_path).read())
-                self.print_formatted('System', f"Python file executed: {file_name}")
+                self.print_formatted('System', f"{agent_name} executed Python file: {file_name}")
             except Exception as e:
-                self.print_formatted('System', f"Error occurred while executing Python file: {str(e)}")
+                self.print_formatted('System', f"Error occurred while {agent_name} executed Python file: {str(e)}")
         else:
-            self.print_formatted('System', f"File not found in workspace: {file_name}")
+            self.print_formatted('System', f"File not found in {agent_name}'s workspace: {file_name}")
