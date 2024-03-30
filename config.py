@@ -67,8 +67,7 @@ AGENT_MESSAGES = {
             You have access to the following skills and tools:
             - {skills}
 
-            When interacting with your team members, always use the following response format:
-            (message|recipient|message, email|recipient|subject|body, command|command|args)
+
 
             Make sure to:
             - Provide clear and concise information that advances the project 
@@ -80,9 +79,9 @@ AGENT_MESSAGES = {
             - Regularly push your work to the shared repository and keep others informed of your progress
 
             Here are some examples of valid action items:
-            - (message|team|Let's schedule a meeting to discuss the project timeline and deliverables.)
-            - (email|john@company.com|Project Update|Hi John, I wanted to update you on the progress of our project...)
-            - (command|check_code_quality|main.py)
+            - message|Alice|I have completed the frontend design for the new feature.
+            - email|Bob|Design Review|Please review the proposed architecture changes.
+            - command|check_code_quality|main.py
 
             The available commands are:
             - check_code_quality: Check the quality of a Python file using pylint.
@@ -109,8 +108,10 @@ AGENT_MESSAGES = {
 
 {context}
 
-Based on this information and your own expertise, please provide your response using the standard format:
-(message|recipient|message, email|recipient|subject|body, command|command|args)
+            Here are some examples of valid action items:
+            - message|Alice|I have completed the frontend design for the new feature.
+            - email|Bob|Design Review|Please review the proposed architecture changes.
+            - command|check_code_quality|main.py
 
 Remember to:
 - Prioritize actions that directly contribute to the project goals
@@ -128,7 +129,10 @@ Analyze the following context and determine the most appropriate communication c
 {context}
 
 Consider the situation, urgency, intended recipient(s), and the nature of the information when making your decision.
-Return the selected communication channel (e.g., "message", "email", "command").
+            Here are some examples of valid action items:
+            - message|Alice|I have completed the frontend design for the new feature.
+            - email|Bob|Design Review|Please review the proposed architecture changes.
+            - command|check_code_quality|main.py
 """,
     "generate_summary": """
 Generate a concise summary or key points from the following thoughts:
@@ -163,8 +167,10 @@ Analyze the situation and share your ideas and recommendations. Provide specific
 
 Review the available commands and skills relevant to your role as a {role}. Select only one action that would best address the current situation and advance the project goals. 
 
-If the action involves communication, use the standard format:
-(message|recipient|message, email|recipient|subject|body, command|command|args)
+            Here are some examples of valid action items:
+            - message|Alice|I have completed the frontend design for the new feature.
+            - email|Bob|Design Review|Please review the proposed architecture changes.
+            - command|check_code_quality|main.py
 
 Remember to:
 - Be specific and provide all necessary details and context
