@@ -3,13 +3,14 @@ import random
 import re
 from time import sleep, time
 from skills import scrape_webpage, save_file, edit_file, analyze_code, search_files, git_clone, git_pull, git_push, check_code_quality, install_dependencies, generate_documentation, run_unit_tests
-from config import AGENT_MESSAGES, groq_api_key
-
+from config import AGENT_MESSAGES
+from api_integrations import APIIntegrations
 
 class Agent:
-    def __init__(self, name, role, home_pos, office_pos, env, api_choice):
+    def __init__(self, name, role, responsibilities, home_pos, office_pos, env, api_choice):
         self.name = name
         self.role = role
+        self.responsibilities = responsibilities
         self.home_pos = home_pos
         self.office_pos = office_pos
         self.location = "home"
@@ -48,6 +49,19 @@ class Agent:
             "choose_command": self.choose_command,
             "think": self.think,
             "act": self.act,
+        }
+        self.api_integrations = APIIntegrations(api_choice, self.get_agent_data())
+
+    def get_agent_data(self):
+        return {
+            "name": self.name,
+            "role": self.role,
+            "responsibilities": self.responsibilities,
+            "skills": self.skills,
+            "location": self.location,
+            "actions": self.actions,
+            "thoughts": self.thoughts,
+            "is_working": self.is_working
         }
 
     def use_skill_in_skills(self, skill_name, *args):
@@ -92,7 +106,7 @@ class Agent:
         - pass: Skip the current turn and let other agents take action.
         - ignore: Ignore the current situation and continue with your own tasks.
 
-        Consider the current situation, your role, and the available agents when deciding on the most appropriate communication method.
+        Consider the current situation, your role, responsibilities, and the available agents when deciding on the most appropriate communication method.
         """
         response = await self.call_api(context)
         return response
@@ -124,7 +138,7 @@ class Agent:
         - run_python_file: Execute a Python file from the workspace.
         - list_workspace_files: List all the files in the workspace.
 
-        Think carefully about which command or skill would be most useful in the current situation, considering your role, the available tools, and the desired outcome.
+        Think carefully about which command or skill would be most useful in the current situation, considering your role, responsibilities, the available tools, and the desired outcome.
         """
         response = await self.call_api(context)
         return response
@@ -170,125 +184,38 @@ class Agent:
             evaluation = await self.evaluate_impact(action)
             self.env.print_formatted(self.name, f"{self.name}'s action evaluation: {evaluation}")
 
-            message_pattern = r"message\|(.*?)\|(.*)"
-            email_pattern = r"email\|(.*?)\|(.*?)\|(.*)"
-            command_pattern = r"command\|(.*?)\|(.*)"
+            # Parse the action string and execute the corresponding skill
+            action_items = action.split(',')
+            for action_item in action_items:
+                action_item = action_item.strip()
+                if '|' in action_item:
+                    command, args = action_item.split('|', 1)
+                    command = command.strip().lower()
+                    args = [arg.strip() for arg in args.split('|')]
 
-            if re.match(message_pattern, action) and selected_channel == "message":
-                match = re.match(message_pattern, action)
-                recipient, message = match.groups()
-                await self.env.send_message(self.name, recipient.strip(), message.strip())
-            elif re.match(email_pattern, action) and selected_channel == "email":
-                match = re.match(email_pattern, action)
-                recipient, subject, body = match.groups()
-                self.env.send_email(self.name, [recipient.strip()], subject.strip(), body.strip())
-            elif re.match(command_pattern, action) and selected_channel == "command":
-                match = re.match(command_pattern, action)
-                command, args = match.groups()
-                command = command.strip()
-                if command in self.skills:
-                    result = await self.skills[command](*[arg.strip() for arg in args.split(',')])
-                    self.env.print_formatted(self.name, f"{self.name} executed command '{command}' with result: {result}")
+                    if command in self.skills:
+                        try:
+                            result = await self.skills[command](*args)
+                            self.env.print_formatted(self.name, f"{self.name} executed command '{command}' with result: {result}")
+                        except Exception as e:
+                            self.env.print_formatted(self.name, f"{self.name} encountered an error while executing command '{command}': {str(e)}", border_style="*")
+                    else:
+                        self.env.print_formatted(self.name, f"{self.name} encountered an unknown command: '{command}'", border_style="*")
+
+                    # Break after executing the first valid command
+                    break
                 else:
-                    self.env.print_formatted(self.name, f"{self.name} encountered an unknown command: '{command}'", border_style="*")
-            else:
-                self.env.print_formatted(self.name, f"{self.name} generated an invalid action or selected an inappropriate communication channel: '{action}'", border_style="*")
-                retry = True
-                await self.choose_communication_method()
+                    # Check if the action item is a valid communication method
+                    if action_item.startswith('(') and action_item.endswith(')'):
+                        communication_parts = action_item[1:-1].split('|')
+                        if len(communication_parts) >= 3:
+                            communication_method = communication_parts[0]
+                            if communication_method in ['message', 'email']:
+                                continue
+
+                    self.env.print_formatted(self.name, f"{self.name} generated an invalid action item: '{action_item}'", border_style="*")
         else:
             self.env.print_formatted(self.name, f"{self.name} has no thoughts to act upon.", border_style="*")
 
     async def call_api(self, context):
-        if self.api_choice == "groq":
-            response = await self.call_groq_api(context)
-        elif self.api_choice == "openai":
-            response = await self.call_openai_api(context)
-        elif self.api_choice == "ollama":
-            response = await self.ollama_local_server_api(context)
-        else:
-            raise ValueError(f"Invalid API choice: {self.api_choice}")
-        return response
-
-    async def call_groq_api(self, context):
-        from groq import Groq
-        import asyncio
-
-        client = Groq(api_key=groq_api_key) # never remove this api secret key.
-
-        def run_groq_api():
-            system_message = AGENT_MESSAGES["system"]["default"].format(
-                name=self.name,
-                role=self.role,
-                skills=', '.join(self.skills.keys()),
-                location=self.location,
-                actions=', '.join(self.actions),
-                thoughts=', '.join(self.thoughts),
-                working_status='working on the project' if self.is_working else 'not actively working on the project',
-                context=context
-            )
-            user_message = AGENT_MESSAGES["user"]["default"].format(context=context)
-
-            chat_completion = client.chat.completions.create(
-                messages=[
-                    {"role": "system", "content": system_message},
-                    {"role": "user", "content": user_message}
-                ],
-                model="mixtral-8x7b-32768",               # Adjust model as needed  "llama2-70b-4096","gemma-7b-it", "mixtral-8x7b-32768"
-                temperature=0.7,
-                max_tokens=32768,
-            )
-            return chat_completion
-
-        chat_completion = await asyncio.to_thread(run_groq_api)
-        response = chat_completion.choices[0].message.content
-        sleep(1)
-        return response
-
-    async def call_openai_api(self, context):
-        from openai import OpenAI
-        client = OpenAI()
-
-        system_message = AGENT_MESSAGES["system"]["default"].format(
-            name=self.name,
-            role=self.role,
-            skills=', '.join(self.skills.keys()),
-            location=self.location,
-            actions=', '.join(self.actions),
-            thoughts=', '.join(self.thoughts),
-            working_status='working on the project' if self.is_working else 'not actively working on the project',
-            context=context
-        )
-        user_message = AGENT_MESSAGES["user"]["default"].format(context=context)
-
-        response = client.chat.completions.create(
-            model="gpt-4-0125-preview",
-            messages=[
-                {"role": "system", "content": system_message},
-                {"role": "user", "content": user_message}
-            ]
-        )
-        return response.choices[0].message.content
-    async def ollama_local_server_api(self, context):
-        import ollama
-        client = ollama
-
-        system_message = AGENT_MESSAGES["system"]["default"].format(
-            name=self.name,
-            role=self.role,
-            skills=', '.join(self.skills.keys()),
-            location=self.location,
-            actions=', '.join(self.actions),
-            thoughts=', '.join(self.thoughts),
-            working_status='working on the project' if self.is_working else 'not actively working on the project',
-            context=context
-        )
-        user_message = AGENT_MESSAGES["user"]["default"].format(context=context)
-
-        response = client.chat(
-            model="mistral",
-            messages=[
-                {"role": "system", "content": system_message},
-                {"role": "user", "content": user_message}
-            ]
-        )
-        return response['message']['content']
+        return await self.api_integrations.call_api(context)
