@@ -67,6 +67,7 @@ class APIIntegrations:
             response = await self.call_claude_api(context)
         else:
             raise ValueError(f"Invalid API choice: {self.api_choice}")
+        sleep(3)
         return response
 
     async def call_groq_api(self, context):
@@ -97,7 +98,7 @@ class APIIntegrations:
             return chat_completion
         chat_completion = await asyncio.to_thread(run_groq_api)
         response = chat_completion.choices[0].message.content
-        sleep(1)
+        sleep(5)
         return response
 
     async def call_openai_api(self, context):
