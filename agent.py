@@ -1,7 +1,15 @@
 import asyncio
+import base64
+
+import requests
 from api_integrations import APIIntegrations
 from bs4 import BeautifulSoup
 import os
+from skills import (
+    scrape_webpage, save_file, edit_file, search_files, git_clone, git_pull,
+    git_push, analyze_code, check_code_quality, install_dependencies,
+    generate_documentation, run_unit_tests
+)
 
 class Agent:
     def __init__(self, name, role, responsibilities, skills, env, api_choice):
@@ -30,6 +38,8 @@ class Agent:
     async def go_to_office(self):
         self.get_agent_data()["location"] = "office"
         self.get_agent_data()["is_working"] = True
+        self.check_email()
+        self.review_tasks()
         self.env.print_formatted(self.name, f"{self.name} has arrived at the office.")
 
     async def go_home(self):
@@ -46,17 +56,29 @@ class Agent:
 
     async def review_tasks(self):
         self.env.print_formatted(self.name, f"{self.name} is reviewing their tasks for the day.")
+        await asyncio.sleep(1)
+        self.think()
 
     async def wrap_up_tasks(self):
+        self.think()
         self.env.print_formatted(self.name, f"{self.name} is wrapping up their tasks for the day.")
 
     async def attend_meeting(self):
+        # broadcating message to all agents
+        await self.env.broadcast_message(self.name, [agent.name for agent in self.env.agents], f"{self.name} is attending a meeting.")
+        await self.generate_message(self.env.agents[0])
         self.env.print_formatted(self.name, f"{self.name} is attending a meeting.")
         await asyncio.sleep(1)
 
     async def collaborate_with_team(self):
         self.env.print_formatted(self.name, f"{self.name} is collaborating with their team.")
-        await asyncio.sleep(1)
+        # add real time collaboration with having multiple agents talking to each other
+        while True:
+            for agent in self.env.agents:
+                if agent != self:
+                    message = await self.generate_message(agent)
+                    await self.env.send_message(self.name, agent.name, message)
+            await asyncio.sleep(1)
 
     async def work_on_projects(self):
         self.env.print_formatted(self.name, f"{self.name} is working on their projects.")
@@ -229,3 +251,88 @@ class Agent:
         for link in scraped_data['links']:
             formatted_data += f"- {link}\n"
         return formatted_data
+
+    async def save_file(self, file_path, content):
+        result = save_file(file_path, content)
+        self.env.print_formatted(self.name, result)
+
+    async def edit_file(self, file_path, old_content, new_content):
+        result = edit_file(file_path, old_content, new_content)
+        self.env.print_formatted(self.name, result)
+
+    async def search_files(self, directory, keyword):
+        result = search_files(directory, keyword)
+        self.env.print_formatted(self.name, result)
+    async def create_github_repo(self, repo_name, api_key):
+        url = "https://api.github.com/user/repos"
+        headers = {
+            "Authorization": f"token {api_key}",
+            "Accept": "application/vnd.github.v3+json"
+        }
+        data = {
+            "name": repo_name,
+            "description": f"Repository for {self.name}",
+            "private": False
+        }
+        response = requests.post(url, headers=headers, json=data)
+        if response.status_code == 201:
+            repo_url = response.json()["clone_url"]
+            self.env.print_formatted(self.name, f"Created GitHub repository: {repo_name}")
+            return repo_url
+        elif response.status_code == 422 and "already exists" in response.text:
+            repo_url = f"https://github.com/{self.name.lower()}/{repo_name}.git"
+            self.env.print_formatted(self.name, f"GitHub repository already exists: {repo_name}")
+            return repo_url
+        else:
+            self.env.print_formatted(self.name, f"Failed to create GitHub repository: {repo_name}")
+            self.env.print_formatted(self.name, f"API response: {response.text}")
+            return None
+    async def git_clone(self, repository_url, target_directory):
+        result = git_clone(repository_url, target_directory)
+        self.env.print_formatted(self.name, result)
+
+    async def git_pull(self, repository_path):
+        result = git_pull(repository_path)
+        self.env.print_formatted(self.name, result)
+
+    async def git_push(self, repository_path, commit_message):
+        result = git_push(repository_path, commit_message)
+        self.env.print_formatted(self.name, result)
+
+    async def analyze_code(self, code_file):
+        result = analyze_code(code_file)
+        self.env.print_formatted(self.name, result)
+
+    async def check_code_quality(self, file_path):
+        result = check_code_quality(file_path)
+        self.env.print_formatted(self.name, result)
+
+    async def install_dependencies(self, requirements_file):
+        result = install_dependencies(requirements_file)
+        self.env.print_formatted(self.name, result)
+
+    async def generate_documentation(self, code_directory, output_file):
+        result = generate_documentation(code_directory, output_file)
+        self.env.print_formatted(self.name, result)
+
+    async def run_unit_tests(self, test_directory):
+        result = run_unit_tests(test_directory)
+        self.env.print_formatted(self.name, result)
+    async def add_file_to_repo(self, repo_path, file_path, commit_message, api_key):
+        url = f"https://api.github.com/repos/{self.name.lower()}/{repo_path}/contents/{file_path}"
+        headers = {
+            "Authorization": f"token {api_key}",
+            "Accept": "application/vnd.github.v3+json"
+        }
+        with open(file_path, "rb") as file:
+            content = base64.b64encode(file.read()).decode("utf-8")
+        data = {
+            "message": commit_message,
+            "content": content
+        }
+        response = requests.put(url, headers=headers, json=data)
+        if response.status_code == 201:
+            self.env.print_formatted(self.name, f"Added file to GitHub repository: {file_path}")
+        else:
+            self.env.print_formatted(self.name, f"Failed to add file to GitHub repository: {file_path}")
+            self.env.print_formatted(self.name, f"API response: {response.text}")
