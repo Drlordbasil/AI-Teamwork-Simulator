@@ -5,6 +5,8 @@ import database
 from colorama import init, Fore, Style
 import requests
 from bs4 import BeautifulSoup
+from skills import scrape_webpage
+
 init()
 
 AGENT_STYLES = {
@@ -37,7 +39,7 @@ class Environment:
     async def send_message(self, sender, recipient, message):
         for agent in self.agents:
             if agent.name == recipient:
-                self.print_formatted(recipient, f"{recipient} received a message from {sender}: '{message}'", border_style="-")
+                self.print_formatted(recipient, f"{recipient} received a message from {sender}: '{message}'", border_style="▃▃▃")
                 agent.actions.append(f"Received message from {sender}: '{message}'")
 
         timestamp = datetime.datetime.now().isoformat()
@@ -158,25 +160,8 @@ class Environment:
             return None
 
     def scrape_webpage(self, url):
-        try:
-            response = requests.get(url)
-            if response.status_code == 200:
-                soup = BeautifulSoup(response.text, 'html.parser')
-                scraped_data = {
-                    'title': soup.title.text if soup.title else '',
-                    'headers': [header.text for header in soup.find_all(['h1', 'h2', 'h3'])],
-                    'paragraphs': [p.text for p in soup.find_all('p')],
-                    'links': [link.get('href') for link in soup.find_all('a')]
-                }
-                self.print_formatted('System', f"Webpage scraped successfully: {url}")
-                return scraped_data
-            else:
-                self.print_formatted('System', f"Failed to scrape webpage. Status code: {response.status_code}")
-                return None
-        except requests.exceptions.RequestException as e:
-            self.print_formatted('System', f"Error occurred while scraping webpage: {str(e)}")
-            return None
-    
+        return scrape_webpage(url)
+
     def save_workspace_file(self, agent_name, file_name, content):
         workspace_path = self.workspaces[agent_name]
         file_path = os.path.join(workspace_path, file_name)
