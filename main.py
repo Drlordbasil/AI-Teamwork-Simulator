@@ -17,7 +17,7 @@ async def run_simulation():
     env = Environment()
     agents = []
 
-    api_choice = "groq" #input("Enter the API choice (groq/openai/ollama/langchain/claude): ") # claude isnt working and i prefer groq for testing.
+    api_choice = "groq" #input("Enter the API choice (groq/openai/ollama/langchain/claude): ") # claude isnt working due to rate limiting error(fixing) and i prefer groq for testing.
 
     for agent_config in config.AGENTS:
         agent = Agent(agent_config['name'], agent_config['role'], agent_config['responsibilities'], agent_config['skills'], env, api_choice)
