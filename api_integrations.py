@@ -191,3 +191,26 @@ class APIIntegrations:
         )
         
         return response.content[0].text
+
+    async def call_local_LM_studio_API_server(self, context):
+  
+            system_message = AGENT_MESSAGES["system"]["default"].format(
+                name=self.agent_data["name"],
+                role=self.agent_data["role"],
+                responsibilities=self.agent_data["responsibilities"],
+                skills=', '.join(self.agent_data["skills"]),
+                location=self.agent_data["location"],
+                actions=', '.join(self.agent_data["actions"]),
+                thoughts=' '.join(map(str, self.agent_data["thoughts"])),
+                working_status='working on the project' if self.agent_data["is_working"] else 'not actively working on the project',
+                context=context
+            )
+            user_message = AGENT_MESSAGES["user"]["default"].format(context=context)
+            response = self.client.chat.completions.create(
+                model="mistral",
+                messages=[
+                    {"role": "system", "content": system_message},
+                    {"role": "user", "content": user_message}
+                ]
+            )
+            return response.choices[0].message.content
